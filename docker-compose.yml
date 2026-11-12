@@ -1,0 +1,58 @@
+services:
+  pagos-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: pagos_db
+      POSTGRES_USER: pagos
+      POSTGRES_PASSWORD: pagos_local
+    ports:
+      - "5433:5432"
+    volumes:
+      - pagos-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pagos -d pagos_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  ms-pagos:
+    build: .
+    ports:
+      - "8083:8083"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      SERVER_PORT: 8083
+      SPRING_DATASOURCE_URL: jdbc:postgresql://pagos-db:5432/pagos_db
+      SPRING_DATASOURCE_USERNAME: pagos
+      SPRING_DATASOURCE_PASSWORD: pagos_local
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
+      ORDENES_SERVICE_URL: ${ORDENES_SERVICE_URL:-http://host.docker.internal:8084/api/v1/ordenes}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      TRANSBANK_COMMERCE_CODE: ${TRANSBANK_COMMERCE_CODE:-597055555532}
+      TRANSBANK_API_KEY: ${TRANSBANK_API_KEY:-}
+      TRANSBANK_ENVIRONMENT: ${TRANSBANK_ENVIRONMENT:-integration}
+      TRANSBANK_RETURN_URL: ${TRANSBANK_RETURN_URL:-http://localhost:8083/api/pagos/retorno}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+    depends_on:
+      pagos-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+
+volumes:
+  pagos-db-data:
