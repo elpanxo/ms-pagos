@@ -1,6 +1,7 @@
 package cl.proyectoEcommerce.ms_pagos.services;
 
 import cl.proyectoEcommerce.ms_pagos.dtos.IniciarPagoResponse;
+import cl.proyectoEcommerce.ms_pagos.dtos.IntentoPagoDTO;
 import cl.proyectoEcommerce.ms_pagos.dtos.OrdenResponseDTO;
 import cl.proyectoEcommerce.ms_pagos.dtos.PagoResultadoDTO;
 import cl.proyectoEcommerce.ms_pagos.entities.Pago;
@@ -24,17 +25,19 @@ public class PagoService {
     private final OrdenService ordenService;
     private final AntifraudeService antifraudeService;
     private final PagoEventPublisher eventPublisher;
+    private final KafkaAttemptPublisher kafkaAttemptPublisher;
     private final WebpayPlus.Transaction webpay;
     private final String frontendUrl;
     private final String callbackUrl;
 
     public PagoService(PagoRepository pagoRepository, OrdenService ordenService, AntifraudeService antifraudeService,
-            PagoEventPublisher eventPublisher, WebpayPlus.Transaction webpay,
+            PagoEventPublisher eventPublisher, KafkaAttemptPublisher kafkaAttemptPublisher,
+            WebpayPlus.Transaction webpay,
             @Value("${app.frontend-url:http://localhost:5173}") String frontendUrl,
             @Value("${transbank.return-url:http://localhost:8083/api/pagos/retorno}") String callbackUrl) {
         this.pagoRepository = pagoRepository; this.ordenService = ordenService;
         this.antifraudeService = antifraudeService; this.eventPublisher = eventPublisher;
-        this.webpay = webpay; this.frontendUrl = frontendUrl.replaceAll("/$", ""); this.callbackUrl = callbackUrl;
+        this.kafkaAttemptPublisher = kafkaAttemptPublisher; this.webpay = webpay; this.frontendUrl = frontendUrl.replaceAll("/$", ""); this.callbackUrl = callbackUrl;
     }
 
     public IniciarPagoResponse iniciar(Long orderId, String clientId, String bearerToken) {
@@ -54,11 +57,15 @@ public class PagoService {
             throw new IllegalStateException("Esta orden ya tiene un pago registrado: " + existing.getStatus());
         }
 
-        Instant blockedUntil = antifraudeService.registrarIntento(clientId, orderId);
+        Instant blockedUntil = antifraudeService.bloqueoActivoHasta(clientId);
         if (blockedUntil != null) {
             eventPublisher.publicar(orderId, clientId, "bloqueado", amount);
             throw new PagoBloqueadoException(blockedUntil);
         }
+
+        String attemptId = "TX-" + UUID.randomUUID();
+        kafkaAttemptPublisher.publicar(new IntentoPagoDTO(clientId, amount.longValueExact(), attemptId,
+                Instant.now(), orderId));
 
         String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 10);
         String buyOrder = "O" + Long.toString(orderId, 36) + "-" + suffix;
@@ -98,7 +105,7 @@ public class PagoService {
             pago.setAuthorizationCode(response.getAuthorizationCode());
             pago.setResponseCode(response.getResponseCode());
             pagoRepository.save(pago);
-            antifraudeService.limpiarBloqueo(pago.getClientId());
+            antifraudeService.reiniciarDespuesDeCallback(pago.getClientId());
             eventPublisher.publicar(pago.getOrderId(), pago.getClientId(), pago.getStatus(), pago.getAmount());
             return new PagoResultadoDTO(pago.getOrderId(), pago.getStatus(),
                     response.getAmount() == null ? pago.getAmount() : BigDecimal.valueOf(response.getAmount()),
@@ -116,7 +123,7 @@ public class PagoService {
         if (!"AUTHORIZED".equals(pago.getStatus())) {
             pago.setStatus("CANCELLED");
             pagoRepository.save(pago);
-            antifraudeService.limpiarBloqueo(pago.getClientId());
+            antifraudeService.reiniciarDespuesDeCallback(pago.getClientId());
             eventPublisher.publicar(pago.getOrderId(), pago.getClientId(), pago.getStatus(), pago.getAmount());
         }
         return new PagoResultadoDTO(pago.getOrderId(), pago.getStatus(), pago.getAmount(), null,

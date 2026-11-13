@@ -21,6 +21,15 @@ spring:
         jwt:
           tenant-id: ${AZURE_TENANT_ID}
           client-id: ${AZURE_CLIENT_ID}
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ${SPRING_KAFKA_CONSUMER_GROUP_ID:payment-velocity-group}
+      auto-offset-reset: earliest
+    listener:
+      missing-topics-fatal: false
+    admin:
+      fail-fast: false
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
@@ -40,7 +49,14 @@ transbank:
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
 
+pagos:
+  kafka:
+    topic: ${PAYMENT_ATTEMPTS_TOPIC:payment-attempts}
+    partitions: ${PAYMENT_ATTEMPTS_PARTITIONS:3}
+    replicas: ${PAYMENT_ATTEMPTS_REPLICAS:1}
+
 fraud:
+  cleanup-delay-ms: ${FRAUD_CLEANUP_DELAY_MS:3600000}
   max-attempts: ${FRAUD_MAX_ATTEMPTS:3}
   window-seconds: ${FRAUD_WINDOW_SECONDS:10}
   block-minutes: ${FRAUD_BLOCK_MINUTES:30}

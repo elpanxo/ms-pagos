@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.kafka.KafkaException;
 
 import java.util.Map;
 
@@ -40,5 +41,10 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ResourceAccessException.class)
     ResponseEntity<Map<String, String>> msOrdenesNoDisponible(ResourceAccessException ex) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("message", "ms-ordenes no está disponible."));
+    }
+    @ExceptionHandler(KafkaException.class)
+    ResponseEntity<Map<String, String>> kafkaNoDisponible(KafkaException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of("message", "No se pudo registrar el intento antifraude en Kafka. Intenta nuevamente."));
     }
 }

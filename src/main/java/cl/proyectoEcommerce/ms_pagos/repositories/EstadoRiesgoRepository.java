@@ -8,8 +8,11 @@ import java.util.Optional;
 
 public interface EstadoRiesgoRepository extends JpaRepository<EstadoRiesgoCliente, String> {
     @Modifying
-    @Query(value = "INSERT INTO estado_riesgo_pago (client_id, updated_at) VALUES (:clientId, CURRENT_TIMESTAMP) ON CONFLICT (client_id) DO NOTHING", nativeQuery = true)
-    void createIfMissing(@Param("clientId") String clientId);
+    @Query(value = "INSERT INTO estado_riesgo_pago (client_id, blocked, attempt_count, updated_at, reset_at) " +
+            "VALUES (:clientId, FALSE, 0, :eventTimestamp, :eventTimestamp) " +
+            "ON CONFLICT (client_id) DO NOTHING", nativeQuery = true)
+    void createIfMissing(@Param("clientId") String clientId,
+            @Param("eventTimestamp") java.time.Instant eventTimestamp);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select e from EstadoRiesgoCliente e where e.clientId = :clientId")
